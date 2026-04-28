@@ -23,3 +23,5 @@ for parent in "$REPO_ROOT"/0x*/; do
         fi
     done
 done
+
+find "$BUILD_DIR" -maxdepth 1 -type f -empty -delete
