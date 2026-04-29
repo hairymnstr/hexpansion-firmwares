@@ -11,13 +11,13 @@ for parent in "$REPO_ROOT"/0x*/; do
     for child in "$parent"0x*/; do
         [ -d "$child" ] || continue
         child_name="$(basename "$child")"
-        zip_name="firmware_${parent_name}_${child_name}.zip"
+        archive_name="firmware_${parent_name}_${child_name}.tar.gz"
         if [ -z "$(ls -A "$child")" ]; then
             echo "Skipping $parent_name/$child_name (empty)"
             continue
         fi
-        echo "Packing $parent_name/$child_name -> build/$zip_name"
-        (cd "$child" && zip -r "$BUILD_DIR/$zip_name" . --exclude eeprom.yaml)
+        echo "Packing $parent_name/$child_name -> build/$archive_name"
+        (cd "$child" && tar czf "$BUILD_DIR/$archive_name" --exclude=eeprom.yaml .)
         if [ -f "$child/eeprom.yaml" ]; then
             cp "$child/eeprom.yaml" "$BUILD_DIR/firmware_${parent_name}_${child_name}.yaml"
         fi
