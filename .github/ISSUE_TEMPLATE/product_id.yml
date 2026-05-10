@@ -1,0 +1,25 @@
+name: Product ID
+description: Request a product id from one of the generic vendors
+title: "[PID]: "
+labels: ["prefix"]
+type: prefix
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to request a product id for your hexpansions.
+  - type: input
+    id: requested_id
+    attributes:
+      label: Requested ID
+      description: What ID are you requesting. Do not request existing IDs.
+      placeholder: 0xCAFE
+    validations:
+      required: true
+  - type: dropdown
+    id: vendor
+    attributes:
+      label: Which vendor do you want to use?
+      options:
+        - 0xCAFE
+        - 0xF055
