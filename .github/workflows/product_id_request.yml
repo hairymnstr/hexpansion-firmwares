@@ -1,0 +1,121 @@
+name: Product ID Request
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  process-pid-request:
+    if: startsWith(github.event.issue.title, '[PID]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse and validate request
+        id: validate
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_USER: ${{ github.event.issue.user.login }}
+        run: |
+          requested_id=$(printf '%s' "$ISSUE_BODY" | tr -d '\r' | awk 'p && NF{print; exit} /^### Requested ID$/{p=1}' | tr -d '[:space:]')
+          echo "Extracted ID: '$requested_id'"
+
+          if ! printf '%s' "$requested_id" | grep -qE '^0x[0-9A-Fa-f]{4}$'; then
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            echo "reason=Requested ID '${requested_id}' does not match required format 0x[0-9A-F]{4}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          vendor=$(printf '%s' "$ISSUE_BODY" | tr -d '\r' | awk 'p && NF{print; exit} /^### Which vendor do you want to use\?$/{p=1}' | tr -d '[:space:]')
+          echo "Extracted vendor: '$vendor'"
+
+          vendor_dir=$(printf '%s' "$vendor" | tr '[:upper:]' '[:lower:]')
+
+          if [ "$vendor_dir" != "0xcafe" ] && [ "$vendor_dir" != "0xf055" ]; then
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            echo "reason=Vendor '${vendor}' is not a supported generic vendor (must be 0xCAFE or 0xF055)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          product_dir=$(printf '%s' "$requested_id" | tr '[:upper:]' '[:lower:]')
+
+          if [ -d "${vendor_dir}/${product_dir}" ]; then
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            echo "reason=Product ID '${product_dir}' is already allocated under vendor '${vendor_dir}'" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "valid=true" >> "$GITHUB_OUTPUT"
+          echo "vendor_dir=$vendor_dir" >> "$GITHUB_OUTPUT"
+          echo "product_dir=$product_dir" >> "$GITHUB_OUTPUT"
+          echo "username=$ISSUE_USER" >> "$GITHUB_OUTPUT"
+
+      - name: Create directory, README, and CODEOWNERS entry
+        if: steps.validate.outputs.valid == 'true'
+        env:
+          VENDOR_DIR: ${{ steps.validate.outputs.vendor_dir }}
+          PRODUCT_DIR: ${{ steps.validate.outputs.product_dir }}
+          USERNAME: ${{ steps.validate.outputs.username }}
+        run: |
+          mkdir "${VENDOR_DIR}/${PRODUCT_DIR}"
+          printf '# %s/%s\n\nProduct ID directory for @%s.\n' "$VENDOR_DIR" "$PRODUCT_DIR" "$USERNAME" > "${VENDOR_DIR}/${PRODUCT_DIR}/README.md"
+          printf '\n/%s/%s\t@%s\n' "$VENDOR_DIR" "$PRODUCT_DIR" "$USERNAME" >> .github/CODEOWNERS
+
+      - name: Generate a token
+        id: generate-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Commit and open PR
+        if: steps.validate.outputs.valid == 'true'
+        id: open-pr
+        env:
+          VENDOR_DIR: ${{ steps.validate.outputs.vendor_dir }}
+          PRODUCT_DIR: ${{ steps.validate.outputs.product_dir }}
+          USERNAME: ${{ steps.validate.outputs.username }}
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch origin main
+          git checkout -b "pid/${VENDOR_DIR}/${PRODUCT_DIR}" origin/main
+          git add "${VENDOR_DIR}/${PRODUCT_DIR}/README.md" .github/CODEOWNERS
+          git commit -m "Reserve product ID ${VENDOR_DIR}/${PRODUCT_DIR} for @${USERNAME}"
+          git push -u origin "pid/${VENDOR_DIR}/${PRODUCT_DIR}"
+          pr_url=$(gh pr create \
+            --title "Reserve product ID ${VENDOR_DIR}/${PRODUCT_DIR} for @${USERNAME}" \
+            --body "Closes #${ISSUE_NUMBER}" \
+            --base main \
+            --head "pid/${VENDOR_DIR}/${PRODUCT_DIR}")
+          echo "pr_url=$pr_url" >> "$GITHUB_OUTPUT"
+
+      - name: Comment success
+        if: steps.validate.outputs.valid == 'true'
+        env:
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          VENDOR_DIR: ${{ steps.validate.outputs.vendor_dir }}
+          PRODUCT_DIR: ${{ steps.validate.outputs.product_dir }}
+          PR_URL: ${{ steps.open-pr.outputs.pr_url }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" \
+            --body "Product ID \`${VENDOR_DIR}/${PRODUCT_DIR}\` has been reserved. A pull request has been opened: $PR_URL"
+
+      - name: Comment failure
+        if: steps.validate.outputs.valid == 'false'
+        env:
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REASON: ${{ steps.validate.outputs.reason }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" \
+            --body "Could not process product ID request: $REASON"
