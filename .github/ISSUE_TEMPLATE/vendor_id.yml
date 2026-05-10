@@ -2,7 +2,6 @@ name: Vendor ID
 description: Request a vendor id.
 title: "[VID]: "
 labels: ["prefix"]
-type: prefix
 body:
   - type: markdown
     attributes:
@@ -13,6 +12,6 @@ body:
     attributes:
       label: Requested ID
       description: What ID are you requesting. Do not request existing IDs.
-      placeholder: 0xCAFE
+      placeholder: "0xCAFE"
     validations:
       required: true
