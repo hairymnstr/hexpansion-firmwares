@@ -14,10 +14,12 @@ pack() {
             py_args+=("${f/$REPO_ROOT//firmware}")
         done < <(find "$child" -name '*.py' -print0)
         if [ ${#py_args[@]} -gt 0 ]; then
-            docker run --rm -v "${REPO_ROOT}:/firmware" \
-                ghcr.io/emfcamp/mpy-cross:v5.5.1 \
-                "-march=xtensawin" \
-                "${py_args[@]}"
+            for py_arg in "${py_args[@]}"; do
+                docker run --rm -v "${REPO_ROOT}:/firmware" \
+                    ghcr.io/emfcamp/mpy-cross:v5.5.1 \
+                    "-march=xtensawin" \
+                    "$py_arg"
+            done
             find "$child" -name '*.py' -delete
         fi
         tar_excludes+=(--exclude=USE_MPY)
